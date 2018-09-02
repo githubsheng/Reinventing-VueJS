@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+    <div id="app"></div>
+    <script src="SV.js"></script>
+    <script>
+        const sv = new SV({
+            el: "#app",
+            data: {
+                message: "Hello World!"
+            },
+            render: function(){
+                const pDnode = document.createElement("p");
+                pDnode.innerText = this.message;
+                return pDnode;
+            }
+        });
+    </script>
+</body>
+</html>
