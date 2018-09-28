@@ -1,7 +1,10 @@
 function SV(options){
     this.options = options;
-    this.value = document.querySelector(options.el);
-    this.mount();
+    const el = document.querySelector(options.el);
+    if(el) {
+        this.value = el;
+        this.mount();
+    }
 }
 
 SV.prototype.evaluate = function(){
@@ -9,11 +12,9 @@ SV.prototype.evaluate = function(){
 };
 
 SV.prototype.update = function(newVal){
-    if(this.value && this.value.parentElement) {
-        const parent = this.value.parentElement;
-        parent.insertBefore(newVal, this.value);
-        parent.removeChild(this.value);
-    }
+    const parent = this.value.parentElement;
+    parent.insertBefore(newVal, this.value);
+    parent.removeChild(this.value);
     this.value = newVal;
 };
 
@@ -34,7 +35,7 @@ SV.useComponent = function(name){
     const options = SV.options.components[name];
     options.data = options.data();
     const component = new SV(options);
-    return component.value;
+    return component.evaluate();
 };
 
 //use
@@ -66,6 +67,6 @@ const vm = new SV({
         const div = document.createElement("div");
         div.appendChild(p);
         div.appendChild(name);
-        return p;
+        return div;
     }
 });
