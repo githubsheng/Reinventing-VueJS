@@ -57,6 +57,7 @@ SV.component("name", {
 
 function initData(vm){
     let data = vm.options.data;
+    if(!data) return;
     if(typeof data === 'function') {
         data = data();
     }
