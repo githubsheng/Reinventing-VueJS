@@ -1,5 +1,6 @@
 function SV(options){
     this.options = options;
+    initProps(this);
     initData(this);
     initMethods(this);
     const el = document.querySelector(options.el);
@@ -33,26 +34,57 @@ SV.component = function(name, definition) {
     SV.options.components[name] = definition;
 };
 
-SV.useComponent = function(name){
-    const options = SV.options.components[name];
+SV.useComponent = function(name, input){
+    /*
+    we are going to merge `input` with `options`. Both of them has `props` properties. But the meaning is different.
+    `options.props` stands for the names of accepted component props, where as `input.props` is an object. The object carries
+    the actual component prop values for the new component instance. So To avoid conflicts (but align with Vue api at the same time),
+    we will rename `input.props` to `input.attrs`.
+     */
+    input.attrs = input.props;
+    delete input.props;
+
+    let options = SV.options.components[name];
+
+    //for now we will just use the simple way to merge the `input` and `options`.
+    options = Object.assign(options, input);
+
     const component = new SV(options);
     return component.evaluate();
 };
 
 //use
 SV.component("name", {
+    props: ['firstName', 'lastName'],
     data: function(){
         return {
-            firstName: "Darth",
-            lastName: "Vader"
+            name: `${this.firstName} ${this.lastName}`
         }
     },
     render: function(){
         const p = document.createElement("p");
-        p.innerText = `${this.firstName} ${this.lastName}`;
+        p.innerText = `${this.name}`;
         return p;
     }
 });
+
+function initProps(vm) {
+    if(vm.el || !vm.options.props) return;
+    let acceptedProps = vm.options.props;
+    acceptedProps.forEach(function(propName) {
+       Object.defineProperty(vm, propName, {
+           configurable: true,
+           enumerable: true,
+           get: function proxyGetter(){
+               return vm.options.attrs[propName];
+           },
+           set: function proxySetter(val){
+               //setting component prop's value is not recommended. So we will ignore this operation.
+               //do nothing
+           }
+       });
+    });
+}
 
 function initData(vm){
     if(!vm.options.data) return;
@@ -95,7 +127,7 @@ function initMethods(vm) {
 }
 
 function isReserved (str) {
-    var c = (str + '').charCodeAt(0)
+    const c = (str + '').charCodeAt(0);
     return c === 0x24 || c === 0x5F
 }
 
@@ -114,7 +146,12 @@ const vm = new SV({
         p.innerText = this.message;
         p.addEventListener("click", this.printMessage);
 
-        const name = SV.useComponent("name");
+        const name = SV.useComponent("name", {
+            props: {
+                firstName: 'Darth',
+                lastName: 'Vadar'
+            }
+        });
 
         const div = document.createElement("div");
         div.appendChild(p);
