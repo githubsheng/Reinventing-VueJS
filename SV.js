@@ -35,7 +35,6 @@ SV.component = function(name, definition) {
 
 SV.useComponent = function(name){
     const options = SV.options.components[name];
-    options.data = options.data();
     const component = new SV(options);
     return component.evaluate();
 };
@@ -56,11 +55,10 @@ SV.component("name", {
 });
 
 function initData(vm){
-    let data = vm.options.data;
-    if(!data) return;
-    if(typeof data === 'function') {
-        data = data();
-    }
+    if(!vm.options.data) return;
+    if(typeof vm.options.data === 'function')
+        vm.options.data = vm.options.data();
+    const data = vm.options.data;
     const keys = Object.keys(data);
     let i = keys.length;
     while(i--) {
@@ -75,10 +73,10 @@ function initData(vm){
            configurable: true,
            enumerable: true,
            get: function proxyGetter(){
-                return vm.options.data[key];
+                return data[key];
            },
            set: function proxySetter(val){
-               vm.options.data[key] = val;
+               data[key] = val;
            }
        })
     }
