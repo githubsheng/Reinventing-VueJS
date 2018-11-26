@@ -169,7 +169,7 @@ SV.options = {
 };
 
 SV.component = function(name, definition) {
-SV.options.components[name] = definition;
+    SV.options.components[name] = definition;
 };
 ```
 
