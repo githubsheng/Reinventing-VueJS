@@ -91,7 +91,7 @@ We can quickly test our first component in this chapter.
 
 ```js
 //create the root component
-vm.title = "Ten ways to save money”;
+vm.title = "Ten ways to save money";
 ```
 
 ```html
