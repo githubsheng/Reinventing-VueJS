@@ -176,7 +176,7 @@ We have completely the data proxy implementation, now let's look at method bindi
 
 If we define a method in `options.methods`, we can call the method on the component instance, for example:
 
-#code 2.1
+### code 2.1
 
 ```js
 const vm = new SV({
