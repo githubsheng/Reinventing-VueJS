@@ -264,7 +264,7 @@ const vm = new SV({
     }
 });
 
-vm.authorId = ‘000008’; // => will trigger an update
+vm.authorId = '000008'; // => will trigger an update
 ```
 
 ## html output of the above component before update
