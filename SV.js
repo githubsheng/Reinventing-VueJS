@@ -11,16 +11,15 @@ SV.prototype.evaluate = function(){
     return this.options.render.call(this.options.data);
 };
 
-SV.prototype.update = function(newVal){
+SV.prototype.patch = function(newVal){
     const parent = this.value.parentElement;
     parent.insertBefore(newVal, this.value);
     parent.removeChild(this.value);
-    this.value = newVal;
 };
 
 SV.prototype.mount = function(){
     const newVal = this.evaluate();
-    this.update(newVal);
+    this.patch(newVal);
 };
 
 SV.options = {
