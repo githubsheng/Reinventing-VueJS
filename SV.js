@@ -6,12 +6,17 @@ function SV(options){
     const el = document.querySelector(options.el);
     if(el) {
         this.value = el;
-        this.mount();
+        this.update();
     }
 }
 
+let componentBeingRendered = null;
+
 SV.prototype.evaluate = function(){
-    return this.options.render.call(this);
+    componentBeingRendered = this;
+    const ret = this.options.render.call(this);
+    componentBeingRendered = null;
+    return ret;
 };
 
 SV.prototype.patch = function(newVal){
@@ -20,9 +25,10 @@ SV.prototype.patch = function(newVal){
     parent.removeChild(this.value);
 };
 
-SV.prototype.mount = function(){
+SV.prototype.update = function(){
     const newVal = this.evaluate();
     this.patch(newVal);
+    this.value = newVal;
 };
 
 SV.options = {
@@ -42,23 +48,10 @@ SV.useComponent = function(name, input){
     options = Object.assign(options, input);
 
     const component = new SV(options);
-    return component.evaluate();
+    const dom = component.evaluate();
+    component.value = dom;
+    return dom;
 };
-
-//use
-SV.component("name", {
-    props: ['firstName', 'lastName'],
-    data: function() {
-        return {
-            name: `${this.firstName} ${this.lastName}`
-        }
-    },
-    render: function(){
-        const p = document.createElement("p");
-        p.innerText = `${this.firstName} ${this.lastName} is Luke's father and Luke's father is ${this.name}`;
-        return p;
-    }
-});
 
 function initProps(vm) {
     //if vm.el is true, component is root component and we do not need component props. Everything can be in data.
@@ -106,6 +99,9 @@ function initData(vm){
            }
        })
     }
+
+    //call the observe function here.
+    observe(data, vm);
 }
 
 function initMethods(vm) {
@@ -125,31 +121,87 @@ function isReserved (str) {
     return c === 0x24 || c === 0x5F
 }
 
+function isObject (obj) {
+    return obj !== null && typeof obj === 'object'
+}
+
+function observe(obj, vm) {
+    const keys = Object.keys(obj);
+    let i = keys.length;
+    while(i--) {
+        //for every property in `obj`
+        const key = keys[i];
+        let value = obj[key];
+        //if property is reserved, move on
+        if(isReserved(key)) continue;
+
+        let subscribers = [];
+
+        //we want to define getters and setters for this property, on `obj` instance.
+        Object.defineProperty(obj, key, {
+            configurable: true,
+            enumerable: true,
+            get: function proxyGetter(){
+                //for now, getter simply returns the original value.
+                if(componentBeingRendered) {
+                    subscribers.push(componentBeingRendered);
+                }
+
+                return value;
+            },
+            set: function proxySetter(val){
+                //update the property value. We are not doing `obj[key] = val` because it results in infinite call loop
+                value = val;
+
+                //if the new value is an object, we also need to set up getters and setters on this object as well.
+                if(isObject(value))
+                    observe(value, vm);
+
+                //we only need to update all the depending components / subscribers.
+                subscribers.forEach(sub => {
+                    sub.update();
+                });
+            }
+        });
+
+        //if property is an object, we recursively set up getters and setter on this object as well.
+        if(isObject(value))
+            observe(value, vm);
+    }
+}
+
+
+SV.component("dimension", {
+    props: ['dimensions'],
+    render: function(){
+        const p = document.createElement("p");
+        p.innerText = `Dimension is: ${this.dimensions.width} x ${this.dimensions.height}`;
+        return p;
+    }
+});
+
 const vm = new SV({
     el: '#app',
     data: {
-        message: 'Greetings!'
-    },
-    methods: {
-        printMessage: function(){
-            console.log(this.message);
+        message: 'Great bargain!',
+        dimensions: {
+            width: '6 meters',
+            height: '2 meters'
         }
     },
     render: function(){
-        const p = document.createElement("p");
-        p.innerText = this.message;
-        p.addEventListener("click", this.printMessage);
+        const salesMessage = document.createElement("p");
+        salesMessage.innerText = this.message;
 
-        const name = SV.useComponent("name", {
+        const dimensions = SV.useComponent("dimension", {
             props: {
-                firstName: 'Darth',
-                lastName: 'Vadar'
+                dimensions: this.dimensions
             }
         });
 
         const div = document.createElement("div");
-        div.appendChild(p);
-        div.appendChild(name);
+        div.appendChild(salesMessage);
+        div.appendChild(dimensions);
         return div;
     }
 });

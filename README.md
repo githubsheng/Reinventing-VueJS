@@ -2,7 +2,7 @@
 
 Before we start any implementation, we need to make a few concepts clear here first, to make further discussions a little bit easier:
 
-If a component uses a `options.data` property for rendering, we say that this component “depends on” this property. And this property is a “dependency” of the component, this component is a “depending component”, or “subscriber” of this property. When this dependency changes, our component needs to be re-rendered. We say this component needs “update”. Do not confuse this "update" with `SV.prototype.update`. The latter is the method we use to update DOM tree
+If a component uses a `options.data` property for rendering, we say that this component “depends on” this property. And this property is a “dependency” of the component, this component is a “depending component”, or “subscriber” of this property. When this dependency changes, our component needs to be re-rendered. We say this component needs “update”. 
 
 Consider the following component, property `title`, `author` and `content` are used for rendering, they are this component’s dependencies. And we need to update this component if any of them changes. On the other hand, `bookId` and `authorId` are not used for rendering, and if they change, we do not need to update the component again. Therefore, `bookId` and `authorId` are not dependencies of this component. 
 
@@ -51,6 +51,16 @@ In later chapters, we will see that `options.data` properties are not the only p
 
 For a single component application, the simplest way to make sure the rendered HTML or DOM elements stay in synchronized with `options.data`, is to update the component every time any `options.data` property changes. Conveniently, we already have setters for all the properties. When a setter gets called, it means the corresponding `options.data` property is being changed.  Knowing this, we can update the component when the setter is called.
 
+Firstly, lets quickly modify our `mount` method a little bit and rename it to `update`, since we will mainlying using this method to update the component.
+
+```js
+SV.prototype.update = function(){
+    const newVal = this.evaluate();
+    this.patch(newVal);
+    this.value = newVal;
+};
+```
+
 Here is the modified `initData` function. We only changed the setter function.
 
 ```js
@@ -76,9 +86,8 @@ function initData(vm){
                 return data[key];
            },
            set: function proxySetter(val){
-               data[key] = val;
-               const newDom = vm.evaluate();
-               vm.patch(newDom);
+                data[key] = val;
+                vm.update();
            }
        })
     }
@@ -183,8 +192,7 @@ function observe(obj, vm) {
                     observe(value, vm);
 
                 //when the property gets updated, we will also update the component.
-                const newDom = vm.evaluate();
-                vm.patch(newDom);
+                vm.update();
             }
         });
 
@@ -288,6 +296,7 @@ If we call `vm.authorId = '000008'`, our component also gets updated. In this ca
 
 Let's look at another example, and it shows a different form of unwanted component update. This time we have a parent component and a child component.
 
+### product information example
 ```js
 SV.component("dimension", {
     props: ['dimensions'],
@@ -302,6 +311,7 @@ const vm = new SV({
     el: '#app',
     data: {
         message: 'Great bargain!',
+        productId: 'kIDls8SL',
         dimensions: {
             width: '6 meters',
             height: '2 meters'
@@ -356,13 +366,55 @@ SV.prototype.evaluate = function(){
 Then, in the getters we created for all the `options.data` properties, we can be informed that this property is used (getter called) during the rendering of a component.
 
 ```js
+let subscribers = [];
 
+//we want to define getters and setters for this property, on `obj` instance.
+Object.defineProperty(obj, key, {
+    configurable: true,
+    enumerable: true,
+    get: function proxyGetter(){
+        //for now, getter simply returns the original value.
+        if(componentBeingRendered) {
+            subscribers.push(componentBeingRendered);
+        }
+
+        return value;
+    },
+    set: function proxySetter(val){
+        //omitted for brevity
+    }
+});
 ```
 
+Also, we need to update our setters accordingly, to only update the subscribers. 
 
+//we want to define getters and setters for this property, on `obj` instance.
+Object.defineProperty(obj, key, {
+    configurable: true,
+    enumerable: true,
+    get: function proxyGetter(){
+        //omitted for brevity
+    },
+    set: function proxySetter(val){
+        //update the property value. We are not doing `obj[key] = val` because it results in infinite call loop
+        value = val;
 
-Also, we need to update our setters accordingly: 
+        //if the new value is an object, we also need to set up getters and setters on this object as well.
+        if(isObject(value))
+            observe(value, vm);
 
-Todo: insert code: inside setter, only render a component if the component depends on this property. 
+        //we only need to update all the depending components / subscribers.
+        subscribers.forEach(sub => {
+            sub.update();
+        });
+    }
+});
 
-In this chapter, we made a big step towards “reactive”. In the next chapter, we will reorganize our code slightly to align with the code structure of Vue.js source code.
+If we test the previous production information example, we will see our components are getting correctly updated.
+
+```js
+vm.productId = 'new product Id' // => will not trigger any update. Because there are no subscribers of property `productId`.
+vm.dimensions.height = '3 meters' // => will only update the child component
+```
+
+In this chapter, we made a big step towards “reactive”. Not only will our components get automatically updated when `options.data` properties change, but they are also getting updated in a very efficient way -- in most cases, our components only gets updated if the resulting dom elements will change due to `options.data` change. In next chapter, we will also take a closer look at how the current implementation work with component properties.
