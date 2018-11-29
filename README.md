@@ -1,321 +1,14 @@
-# Chapter 4: First step to reactivity
+# Chapter 5: Reacting to component properties changes
 
-## Definitions
+In the previous chapter, we briefly mentioned that we are also able to react to changes of component properties, by calling `observe(acceptedProps, vm)` in `initProps`.
 
-Before we start any implementation, we need to make a few concepts clear here first, to make further discussions a little bit easier:
+In this chapter, we take a closer look at what happens when we update a component property.
 
-If a component uses a `options.data` property for rendering, we say that this component “depends on” this property. And this property is a “dependency” of the component, this component is a “depending component”, or “subscriber” of this property. When this dependency changes, our component needs to be re-rendered. We say this component needs “update”. 
 
-Consider the following component, property `title`, `author` and `content` are used for rendering, they are this component’s dependencies. And we need to update this component if any of them changes. On the other hand, `bookId` and `authorId` are not used for rendering, and if they change, we do not need to update the component again. Therefore, `bookId` and `authorId` are not dependencies of this component. 
+## Two ways to update a component property
 
-```js
-const vm = new SV({
-    el: '#app',
-    data: {
-        bookId: '000001',
-        authorId: '000007',
-        title: 'Quantum Physics For Dummies',
-        author: 'Steven Holzner',
-        content: 'It is complicated.'
-    },
-    render: function(){
-        const title = document.createElement("p");
-        title.innerText = "Book name: " + this.title;
+Before we discuss how a component component update can trigger component updates, let's spend a couple of minutes to review how the component properties themselves gets updated. There are usually two ways we update a componnet update. Let's look at the following code example: a parent component passes some of its data properties to a child component, as component properties. 
 
-        const author = document.createElement("p");
-        author.innerText = "Author: " + this.author;
-
-        const content = document.createElement("p");
-        content.innerText = "Content: " + this.content;
-
-        const div = document.createElement("div");
-        div.appendChild(title);
-        div.appendChild(author);
-        div.appendChild(content);
-
-        return div;
-    }
-});
-```
-
-## html output of the above component
-```html
-<div>
-    <p>Book name: Quantum Physics For Dummies</p>
-    <p>Author: Steven Holzner</p>
-    <p>Content: It is complicated.</p>
-</div>
-```
-
-In later chapters, we will see that `options.data` properties are not the only possible dependencies. Other things such as computed properties, component props can also be dependencies. But we will first discuss `options.data` properties in this chapter, as they most commonly seen dependencies.
-
-## First attempt to get component updated automatically
-
-For a single component application, the simplest way to make sure the rendered HTML or DOM elements stay in synchronized with `options.data`, is to update the component every time any `options.data` property changes. Conveniently, we already have setters for all the properties. When a setter gets called, it means the corresponding `options.data` property is being changed.  Knowing this, we can update the component when the setter is called.
-
-Firstly, lets quickly modify our `mount` method a little bit and rename it to `update`, since we will mainlying using this method to update the component.
-
-```js
-SV.prototype.update = function(){
-    const newVal = this.evaluate();
-    this.patch(newVal);
-    this.value = newVal;
-};
-```
-
-Here is the modified `initData` function. We only changed the setter function.
-
-```js
-function initData(vm){
-    if(!vm.options.data) return;
-    if(typeof vm.options.data === 'function')
-        vm.options.data = vm.options.data.call(vm);
-    const data = vm.options.data;
-    const keys = Object.keys(data);
-    let i = keys.length;
-    while(i--) {
-       const key = keys[i];
-       if(isReserved(key)) continue;
-       /*
-        for each property in `options.data`,
-        we create a pair of getters and setters on our component
-        instance `vm`.
-        */
-       Object.defineProperty(vm, key, {
-           configurable: true,
-           enumerable: true,
-           get: function proxyGetter(){
-                return data[key];
-           },
-           set: function proxySetter(val){
-                data[key] = val;
-                vm.update();
-           }
-       })
-    }
-}
-```
-
-We can quickly test our first component in this chapter.
-
-```js
-//create the root component
-vm.title = "Ten ways to save money";
-```
-
-```html
-<!-- rendered html -->
-<div>
-    <p>Book name: Ten ways to save money</p>
-    <p>Author: Steven Holzner</p>
-    <p>Content: It is complicated.</p>
-</div>
-```
-
-```js
-vm.author = "Me";
-```
-
-```html
-<!-- rendered html -->
-<div>
-    <p>Book name: Ten ways to save money</p>
-    <p>Author: Me</p>
-    <p>Content: It is complicated.</p>
-</div>
-```
-
-## Reacting to changes of nested properties
-Everything looks OK. But if we modify the code and play around it a little bit, we can quickly find that, sometimes our component isn't updated when we expect it to be updated, and sometimes the component gets updated when it does not need to be updated.
-
-Here is an example in which the component is not getting updated properly. We will change our root component slightly to illustrate the problem:
-
-```js
-const vm = new SV({
-    el: '#app',
-    data: {
-        bookId: '000001',
-        author: {
-            id: '000007',
-            name: 'Steven Holzner'
-        },
-        title: 'Quantum Physics For Dummies',
-        content: 'It is complicated.'
-    },
-    render: function(){
-        const title = document.createElement("p");
-        title.innerText = "Book name: " + this.title;
-
-        const author = document.createElement("p");
-        author.innerText = "Author: " + this.author.name;
-
-        const content = document.createElement("p");
-        content.innerText = "Content: " + this.content;
-
-        const div = document.createElement("div");
-        div.appendChild(title);
-        div.appendChild(author);
-        div.appendChild(content);
-
-        return div;
-    }
-});
-```
-
-Now if we execute `vm.author.name = 'Me'`, the component stays the same. While we have setter for `vm.author`, we don't have one for `vm.author.name`, therefore when `vm.author.name` is changed, no setter is there to tell us we need an update. Essentially, we are able to react to the changes of  `vm.options.data`’s properties, but not able to react to changes of its nested properties.
-
-To solve this immediate issue, we need to be examine all nested properties and create setters for them, just like what we do for the “direct properties” of `vm.options.data`.  We can create a `observe` function to do the job. Given an object, this function walk through all nested properties of the object, and adds a pair of getter and setter for each property. In the setter, it implants the component update logic. If a property is an object itself, the function will recursively calls itself and pass the object property as the parameter, eventually adding getters and setters for all properties (nested or not).
-
-```js
-function observe(obj, vm) {
-    const keys = Object.keys(obj);
-    let i = keys.length;
-    while(i--) {
-        //for every property in `obj`
-        const key = keys[i];
-        let value = obj[key];
-        //if property is reserved, move on
-        if(isReserved(key)) continue;
-
-        //we want to define getters and setters for this property, on `obj` instance.
-        Object.defineProperty(obj, key, {
-            configurable: true,
-            enumerable: true,
-            get: function proxyGetter(){
-                //for now, getter simply returns the original value.
-                return value;
-            },
-            set: function proxySetter(val){
-                //update the property value. We are not doing `obj[key] = val` because it results in infinite call loop
-                value = val;
-
-                //if the new value is an object, we also need to set up getters and setters on this object as well.
-                if(isObject(value))
-                    observe(value, vm);
-
-                //when the property gets updated, we will also update the component.
-                vm.update();
-            }
-        });
-
-        //if property is an object, we recursively set up getters and setter on this object as well.
-        if(isObject(value))
-            observe(value, vm);
-    }
-}
-```
-
-Previously, in our data proxy setter, we added component update logic. Since now the `observe` function will handle this bit, we can remove the component update logic in the data proxy setter. 
-
-```js
-function initData(vm){
-    //...omitted for brevity.
-    while(i--) {
-       const key = keys[i];
-       if(isReserved(key)) continue;
-       Object.defineProperty(vm, key, {
-           configurable: true,
-           enumerable: true,
-           get: function proxyGetter(){
-                return data[key];
-           },
-           set: function proxySetter(val) {
-               //component update logic removed!
-               data[key] = val;
-           }
-       })
-    }
-
-    //call the observe function here.
-    observe(data, vm);
-}
-```
-
-Although we will be mainly talking about reacting to `options.data` changes, in the future we also need to react to `options.props` changes. So lets also add the `observe` call in `initProps`
-
-```js
-function initProps(vm) {
-    if(vm.el || !vm.options.props) return;
-    let acceptedProps = vm.options.props;
-    acceptedProps.forEach(function(propName) {
-       Object.defineProperty(vm, propName, {
-            //omitted for brevity
-       });
-    });
-
-    //call observe here so we can also react to componenent property changes.
-    observe(acceptedProps, vm);
-}
-```
-
-With all these changes, there seem to be a lot of getters and setters in our logic. Maybe we can take a break and figure out what each of them do. Given the previous root component, let's take a look at two examples here.
-
-If we access `vm.content`, conceptually, it is the same as the following:
-
-```js
-const data = {
-    _content: "It is complicated",
-    get content(){
-        return this._content;
-    }
-};
-
-const vm = {
-    data,
-    get content(){
-        return data.content;
-    }
-};
-
-vm.content // => "It is complicated"
-```
-
-In the above code, `get content` of `vm` is called, it in turn calls `get content` of `data`. `get content` of `data` then returns the real value of content.
-
-## Examples of unnecessary updates
-
-The second issue is, we have unnecessary component updates. Let’s quickly revisit our book example
-
-```js
-const vm = new SV({
-    el: '#app',
-    data: {
-        bookId: '000001',
-        authorId: '000007',
-        title: 'Quantum Physics For Dummies',
-        author: 'Steven Holzner',
-        content: 'It is complicated.'
-    },
-    render: function(){
-        //omitted for brevity
-    }
-});
-
-vm.authorId = '000008'; // => will trigger an update
-```
-
-## html output of the above component before update
-```html
-<div>
-    <p>Book name: Quantum Physics For Dummies</p>
-    <p>Author: Steven Holzner</p>
-    <p>Content: It is complicated.</p>
-</div>
-```
-## html output of the above component after update
-```html
-<div>
-    <p>Book name: Quantum Physics For Dummies</p>
-    <p>Author: Steven Holzner</p>
-    <p>Content: It is complicated.</p>
-</div>
-```
-
-If we call `vm.authorId = '000008'`, our component also gets updated. In this case, `vm.authorId ` is not a dependency of the component, and its changes does not affect the rendered HTML DOM elements, therefore, this component update is unnecessary. In real application, we can have hundreds of `options.data` properties like `vm.authorId`, and this means a lot of useless updates.
-
-Let's look at another example, and it shows a different form of unwanted component update. This time we have a parent component and a child component.
-
-### product information example
 ```js
 SV.component("dimension", {
     props: ['dimensions'],
@@ -326,11 +19,29 @@ SV.component("dimension", {
     }
 });
 
-const vm = new SV({
+let childVm;
+
+SV.useComponent = function(name, input){
+    input.attrs = input.props;
+    delete input.props;
+
+    let options = SV.options.components[name];
+
+    options = Object.assign(options, input);
+
+    const component = new SV(options);
+    //for this chapter's experiment, we assign the created child component to `childVm` in global name space for easy access
+    childVm = component;
+
+    const dom = component.evaluate();
+    component.value = dom;
+    return dom;
+};
+
+const parentVm = new SV({
     el: '#app',
     data: {
         message: 'Great bargain!',
-        productId: 'kIDls8SL',
         dimensions: {
             width: '6 meters',
             height: '2 meters'
@@ -352,88 +63,60 @@ const vm = new SV({
         return div;
     }
 });
-
-vm.dimensions.height = '3 meters' // => will update the parent component, indirectly updates the 'dimention' child component.
-
 ```
 
-Consider the above example, `options.data.dimensions` is passed to child components. If we change `options.data.dimensions.height`, the parent component gets updated, and when the parent component update itself, it also render its child component again, indirectly updating the child component. Although the outcome is correct (child component gets updated), only the related the child component needs update. Our parent component do not need a update in this case, therefore the parent update is a waste. The issue becomes even more obvious when our parent component has other child components, when we unnecessarily update the parent component, we also indirectly updates all its child components, and these updates are also not needed. 
-
-In our current implementation, all properties' setter method will cause the component to render again. That means, even if a property is not a dependency, we still update the component when it changes. 
-
-In our first example, `vm.authorId` isn’t a dependency of our root SV component, but its changes causes the root component to update. In our second example, `options.data.dimensions.height` isn’t a dependency of the parent component, but its changes causes the parent component to update.
-
-This is not ideal. And it is particularly bad in real world Vue.js application, where you may have hundreds of properties, hundreds of components, and very frequently data changes. We need to avoid unnecessary component update. And to do, we need to answer the following question:
-
-What components depend on a specific `options.data` property?
-
-Given a `options.data` property, or nested property, we should update and only update those components that depend on it. Now our issue reduces to finding the depending components. This is when our getter methods come to play. When a `options.data` property is used for rendering, its getter methods will get called, and inside the getter method, we can track and record which component uses this property for rendering. This way, we can easily find out all the depending components (subscribers)
-
-Firstly, we need to know which component is being rendered. Since at any time, only one component can be rendered (js does not support multi-thread), we can have a global variable and point it to the component right before the component gets rendered.
+In the above example, our parent component passes its data property `options.data.dimensions` to the child component. This becomes the child component's component property. Interestingly, we have two pairs of getters and setters for this `dimensions` object. The first pair is defined in parent component. When we create the parent component, the `observe` method call creates the first pair of getter and setter for `dimensions` object. When we create the child component, the `observe` method is called again, during the child component initialization, and this time, it creates the second pair of getter and setters, in child component. In this end, we have:
 
 ```js
-let componentBeingRendered = null;
+parentVm.dimensions === childVm.dimensions; // => true
 
-SV.prototype.evaluate = function(){
-    componentBeingRendered = this;
-    const ret = this.options.render.call(this);
-    componentBeingRendered = null;
-    return ret;
-};
+// parentVm.dimensions = {width: '3 meters', height: '4 meters'}; // this is possible, thanks to the setter in parent component
+
+// childVm.dimensions = {width: '3 meters', height: '4 meters'}; // this is also possible, thanks to the setters in child component
 ```
 
-Then, in the getters we created for all the `options.data` properties, we can be informed that this property is used (getter called) during the rendering of a component.
+When we update the `dimensions` via the setter in parent component, the parent component will be updated and rendered. This is because we called the corresponding getter when rendering parent component, and therefore the parent component is recorded as a subscriber. At this time, the child component's rendering has not started yet.
 
 ```js
-let subscribers = [];
-
-//we want to define getters and setters for this property, on `obj` instance.
-Object.defineProperty(obj, key, {
-    configurable: true,
-    enumerable: true,
-    get: function proxyGetter(){
-        //for now, getter simply returns the original value.
-        if(componentBeingRendered) {
-            subscribers.push(componentBeingRendered);
-        }
-
-        return value;
-    },
-    set: function proxySetter(val){
-        //omitted for brevity
-    }
-});
-```
-
-Also, we need to update our setters accordingly, to only update the subscribers. 
-
-//we want to define getters and setters for this property, on `obj` instance.
-Object.defineProperty(obj, key, {
-    configurable: true,
-    enumerable: true,
-    get: function proxyGetter(){
-        //omitted for brevity
-    },
-    set: function proxySetter(val){
-        //update the property value. We are not doing `obj[key] = val` because it results in infinite call loop
-        value = val;
-
-        //if the new value is an object, we also need to set up getters and setters on this object as well.
-        if(isObject(value))
-            observe(value, vm);
-
-        //we only need to update all the depending components / subscribers.
-        subscribers.forEach(sub => {
-            sub.update();
+const parentVm = new SV({
+	//omitted for brevity
+    render: function(){
+    	//omitted for brevity
+        const dimensions = SV.useComponent("dimension", {
+            props: {
+            	//getter is accessed here, before child component starts rendering
+            	//at this time, the `componentBeingRendered` is still parent component.
+            	//therefore, parent component becomes the subscriber.
+                dimensions: this.dimensions
+            }
         });
+        //omitted for brevity
     }
 });
-
-If we test the previous production information example, we will see our components are getting correctly updated.
-
-```js
-vm.productId = 'new product Id' // => will not trigger any update. Because there are no subscribers of property `productId`.
-vm.dimensions.height = '3 meters' // => will only update the child component
 ```
 
-In this chapter, we made a big step towards “reactive”. Not only will our components get automatically updated when `options.data` properties change, but they are also getting updated in a very efficient way -- in most cases, our components only gets updated if the resulting dom elements will change due to `options.data` change. In next chapter, we will also take a closer look at how the current implementation work with component properties.
+When the parent component get updated, it will re-create the child component when rendering, and this time, the newly created child component will be passed the updated `dimensions` object as component property.
+
+The second way to update the `dimensions` is through the setter in child component: `childVm.dimensions = {width: '3 meters', height: '4 meters'};`. This time, only the child component will gets updated. The corresponding getter in child component is called when child component is being rendered, therefore, child component is recorded as a subscriber here. 
+
+```js
+//omitted for brevity
+
+p.innerText = `Dimension is: ${this.dimensions.width} x ${this.dimensions.height}`;
+
+//omitted for brevity
+```
+
+Consequently, when the setter in child component is called, it points `childVm.options.props.dimensions` to `{width: '3 meters', height: '4 meters'}`, and then updates its recorded subscriber -- the child component. However, this will cause data inconsistency as the following code snippet shows, and it is usually undesired.
+
+```js
+parentVm.options.data.dimensions === childVm.options.props.dimensions; // => false
+```
+
+Vue.js user guide has a very detailed explanation of why this is a bad practices: https://vuejs.org/v2/guide/components-props.html#One-Way-Data-Flow
+
+## unnecessary update
+
+If you read carefully, you may notice that if we use the first way to update component properties, the parent component always get updated. However, in the above example, the dom elements rendered by parent component stays the same -- only those rendered by child components changes. So it seems that parent component update is not a neccessary update. This is true. When a getter is called during a component rendering, the value it returns can be used to render dom elements, or used for other purposes. In our example, it is passed to child component. Strictly speaking, it is only a dependency when used to render some dom elements. However, there is no easy to tell how the returned value is used. To be safe, we can only assume that it is used for rendering dom elements. In practice, this assumption is usually true. 
+
+As we will see in later chapters, the reason a component update can be slow, is that it invovles DOM manipulations. As long as we can avoid unnecessary DOM manipulations, a few extra component updates are harmless. This is where virtual DOM comes into play, and we will discuss it in future chapters.
