@@ -1,5 +1,3 @@
-# Chapter 4: First step to reactivity
-
 ## Definitions
 
 Before we start any implementation, we need to make a few concepts clear here first, to make further discussions a little bit easier:
@@ -228,6 +226,23 @@ function initData(vm){
 
     //call the observe function here.
     observe(data, vm);
+}
+```
+
+Although we will be mainly talking about reacting to `options.data` changes, in the future we also need to react to `options.props` changes. So lets also add the `observe` call in `initProps`
+
+```js
+function initProps(vm) {
+    if(vm.el || !vm.options.props) return;
+    let acceptedProps = vm.options.props;
+    acceptedProps.forEach(function(propName) {
+       Object.defineProperty(vm, propName, {
+            //omitted for brevity
+       });
+    });
+
+    //call observe here so we can also react to componenent property changes.
+    observe(acceptedProps, vm);
 }
 ```
 

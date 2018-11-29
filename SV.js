@@ -71,6 +71,8 @@ function initProps(vm) {
            }
        });
     });
+
+    observe(acceptedProps, vm);
 }
 
 function initData(vm){
