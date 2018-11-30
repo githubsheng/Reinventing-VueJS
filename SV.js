@@ -1,4 +1,6 @@
-import {observe} from "./Observer";
+import {observe} from "./Observer.js";
+import {isReserved} from "./Lang.js";
+import Watcher from "./Watcher.js";
 
 function SV(options){
     this.options = options;
@@ -8,27 +10,29 @@ function SV(options){
     const el = document.querySelector(options.el);
     if(el) {
         this.value = el;
-        this.update();
+        this.mount();
     }
 }
 
-let componentBeingRendered = null;
-
 SV.prototype.evaluate = function(){
-    componentBeingRendered = this;
-    const ret = this.options.render.call(this);
-    componentBeingRendered = null;
-    return ret;
+    return this.options.render.call(this);
 };
 
 SV.prototype.patch = function(newVal){
-    const parent = this.value.parentElement;
-    parent.insertBefore(newVal, this.value);
-    parent.removeChild(this.value);
+    const oldVal = this.value;
+    if(oldVal) {
+        const parent = this.value.parentElement;
+        parent.insertBefore(newVal, oldVal);
+        parent.removeChild(oldVal);
+    }
 };
 
-SV.prototype.update = function(){
-    const newVal = this.evaluate();
+SV.prototype.mount = function(){
+    this.watcher = new Watcher(this, this.evaluate, this.update);
+    this.update(this.watcher.value);
+};
+
+SV.prototype.update = function(newVal){
     this.patch(newVal);
     this.value = newVal;
 };
@@ -50,9 +54,8 @@ SV.useComponent = function(name, input){
     options = Object.assign(options, input);
 
     const component = new SV(options);
-    const dom = component.evaluate();
-    component.value = dom;
-    return dom;
+    component.mount();
+    return component.value;
 };
 
 function initProps(vm) {
@@ -120,15 +123,6 @@ function initMethods(vm) {
     }
 }
 
-function isReserved (str) {
-    const c = (str + '').charCodeAt(0);
-    return c === 0x24 || c === 0x5F
-}
-
-function isObject (obj) {
-    return obj !== null && typeof obj === 'object'
-}
-
 SV.component("dimension", {
     props: ['dimensions'],
     render: function(){
@@ -138,7 +132,7 @@ SV.component("dimension", {
     }
 });
 
-const vm = new SV({
+window.vm = new SV({
     el: '#app',
     data: {
         message: 'Great bargain!',

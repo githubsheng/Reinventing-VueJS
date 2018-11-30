@@ -1,5 +1,5 @@
-import {isObject, isReserved} from "./Lang";
-import Dependency from "./Dependency";
+import {isObject, isReserved} from "./Lang.js";
+import Dependency from "./Dependency.js";
 
 export function Observer (value) {
     this.value = value;
