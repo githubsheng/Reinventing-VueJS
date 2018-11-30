@@ -1,3 +1,5 @@
+import Dependency from "./Dependency";
+
 function SV(options){
     this.options = options;
     initProps(this);
@@ -135,9 +137,9 @@ function observe(obj, vm) {
         const key = keys[i];
         let value = obj[key];
         //if property is reserved, move on
-        if(isReserved(key)) continue;
+        if(isReserved(key)) return;
 
-        let subscribers = [];
+        const dep = new Dependency();
 
         //we want to define getters and setters for this property, on `obj` instance.
         Object.defineProperty(obj, key, {
@@ -145,8 +147,8 @@ function observe(obj, vm) {
             enumerable: true,
             get: function proxyGetter(){
                 //for now, getter simply returns the original value.
-                if(componentBeingRendered) {
-                    subscribers.push(componentBeingRendered);
+                if(Dependency.componentBeingRendered) {
+                    dep.addSub(Dependency.componentBeingRendered);
                 }
 
                 return value;
@@ -160,9 +162,7 @@ function observe(obj, vm) {
                     observe(value, vm);
 
                 //we only need to update all the depending components / subscribers.
-                subscribers.forEach(sub => {
-                    sub.update();
-                });
+                dep.notify();
             }
         });
 
