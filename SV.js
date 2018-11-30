@@ -1,4 +1,4 @@
-import Dependency from "./Dependency";
+import {observe} from "./Observer";
 
 function SV(options){
     this.options = options;
@@ -74,7 +74,7 @@ function initProps(vm) {
        });
     });
 
-    observe(acceptedProps, vm);
+    observe(acceptedProps);
 }
 
 function initData(vm){
@@ -105,7 +105,7 @@ function initData(vm){
     }
 
     //call the observe function here.
-    observe(data, vm);
+    observe(data);
 }
 
 function initMethods(vm) {
@@ -128,50 +128,6 @@ function isReserved (str) {
 function isObject (obj) {
     return obj !== null && typeof obj === 'object'
 }
-
-function observe(obj, vm) {
-    const keys = Object.keys(obj);
-    let i = keys.length;
-    while(i--) {
-        //for every property in `obj`
-        const key = keys[i];
-        let value = obj[key];
-        //if property is reserved, move on
-        if(isReserved(key)) return;
-
-        const dep = new Dependency();
-
-        //we want to define getters and setters for this property, on `obj` instance.
-        Object.defineProperty(obj, key, {
-            configurable: true,
-            enumerable: true,
-            get: function proxyGetter(){
-                //for now, getter simply returns the original value.
-                if(Dependency.componentBeingRendered) {
-                    dep.addSub(Dependency.componentBeingRendered);
-                }
-
-                return value;
-            },
-            set: function proxySetter(val){
-                //update the property value. We are not doing `obj[key] = val` because it results in infinite call loop
-                value = val;
-
-                //if the new value is an object, we also need to set up getters and setters on this object as well.
-                if(isObject(value))
-                    observe(value, vm);
-
-                //we only need to update all the depending components / subscribers.
-                dep.notify();
-            }
-        });
-
-        //if property is an object, we recursively set up getters and setter on this object as well.
-        if(isObject(value))
-            observe(value, vm);
-    }
-}
-
 
 SV.component("dimension", {
     props: ['dimensions'],
