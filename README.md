@@ -259,7 +259,7 @@ Another thing to pay attention is, with `Watcher`, we no longer points `Dependen
 
 ## A milestone
 
-We have managed to organize our code into different smaller components. This lays a good foundation for the following development. There are a lot of code changes in this chapter, so be sure to check out the github code repository at least once. In the next chapter, we will try to implement computed property.
+We have managed to organize our code into different smaller components. This lays a good foundation for the following development. There are a lot of code changes in this chapter, so be sure to check out the github code repository at least once. In the next chapter, we will try to implement watched property.
 
 
 
