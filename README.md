@@ -1,215 +1,265 @@
-# Chapter 1: SimplifiedVue and its first component
+# Chapter 6: Refactoring: Observer, Dep and Watcher
 
-## Simplified Vue
+We’ve added a lot of code so far. So far all of our logic resides in `SV.js`. It is time to do some refactoring and move the code to the proper places: new files and maybe new packages. To make it easier to relate to the Vue.js source code, we will be creating similar classes and functions as Vue.js. The first 3 classes we will be creating are `Dependency`, `Observer` and `Watcher`. Let's look at them one by one.
 
-Throughout this book we will be implementing a framework called SimplifiedVue, or SV for short. 
-By implementing this framework step by step, we hope to encounter, and most importantly, solve a lot of similar problems the original authors had when they were implementing the original Vue framework. This will surely help us gain a lot of insight of Vue's source code. We should have no problem understanding the original Vue source code, if we have implemented something similar.
+We will have 3 new classes: `Observer`, `Watcher` and `Dependency`. For now, each of them will be responsible for following tasks:
 
-Our implementation starts from the very basic, very simple features. Eventually, SV will have all the core features and frequently features of Vue. You can find the source code of SV in https://github.com/githubsheng/SV. This repository has multiple branches, and each branch corresponds to a chapter. For example, branch chapter-one will contains the source code in chapter one.
+## Dependency
 
-## Our first SV component
-
-So we are going to implement our own Vue now. It is not going to be easy, but we will take it step by step. Let's start by implementing a single component SV application. We want to be able to use it like the following example:
-
-### html
-
-```html
-<div id="app"></div>
-```
-
-#### js
+We have seen that a data property or component property can be the dependency of multiple depending components / subscribers. So far we have been using a simple array list to manage all the subscribers, as shown below:
 
 ```js
-var vm = new SV({
-    el: '#app',
-    data: {
-        message: 'Hello World!'
-    },
-    render: function(){
-        const p = document.createElement("p");
-        p.innerText = this.message;
-        return p;
+function observe(obj, vm) {
+	//omitted for brevity
+
+	//this list records all subscribers
+	let subscribers = [];
+
+    Object.defineProperty(obj, key, {
+        configurable: true,
+        enumerable: true,
+        get: function proxyGetter(){
+
+            if(componentBeingRendered) {
+            	//add a subscriber
+                subscribers.push(componentBeingRendered);
+            }
+            return value;
+        },
+        set: function proxySetter(val){
+        	//omitted for brevity
+
+            subscribers.forEach(sub => {
+            	//ask a subscriber to update.
+                sub.update();
+            });
+        }
+    });
+
+    //omitted for brevity.
+}
+```
+
+We also have a global variable floating in the air `componentBeingRendered` that points to the current component being rendered.
+
+We will move the all the above logic into `Dependency` class:
+
+```js
+export default function Dependency () {
+    this.subscribers = [];
+    this.subscriberIds = new Set();
+}
+
+Dependency.componentBeingRendered = null;
+
+Dependency.prototype.addSub = function (sub) {
+    if(!this.subscriberIds.has(sub.id)) {
+        this.subscribers.push(sub);
     }
-});
-```
-
-### output html
-
-```html
-<p>Hello World!</p>
-```
-
-Let's take a look at `SV` constructor. Here is its source code. 
-
-```js
-function SV(options){
-    this.options = options;
-    const newDOM = options.render.call(options.data);
-    const existingDOM = document.querySelector(options.el);
-    const parent = el.parentElement;
-    parent.insertBefore(newDOM, existingDOM);
-    parent.removeChild(existingDOM);
-}
-```
-
-What does this constructor do? It receives one parameter `options`. The `options` parameter has a `data` property and a `render` method. Our SV function then binds `options.data` to `render` function and calls it. This will result in a DOM element. The DOM element is then used to replace the existing DOM element whose selector match `options.el`.
-
-Although the current implementation is yet very simple, there are two processes here that are worth mentioning:
-1. evaluation: the process of evaluating the new DOM element. In our case, `const newDOM = options.render.call(options.data);` evaluates the new DOM element.
-2. update: the process of replacing/updating the old DOM element in the DOM tree with the new one. The last 3 lines in the constructor does the updating.
-We will refer to these two processes many times in the future. There are two other concepts and we need to make them clear in the beginning:
-1. render: this concept is different `options.render`. When we say we want to render a component, we usually mean the processing of evaluation and update. `options.render`, is used to specify how we want to generate the DOM elements. If we want to refer to `options.render` in this book, we will always use `options.render` instead of `render`.
-2. mount: similar to render.
-
-We've defined 4 concepts. Next, let's refactor our code accordingly:
-
-```js
-function SV(options){
-    this.options = options;
-    this.value = document.querySelector(options.el);
-    this.mount();
-}
-
-SV.prototype.evaluate = function(){
-    return this.options.render.call(this.options.data);
 };
 
-SV.prototype.update = function(newVal){
-    const parent = this.value.parentElement;
-    parent.insertBefore(newVal, this.value);
-    parent.removeChild(this.value);
-    // the latest DOM element will be stored as `this.value`.
+Dependency.prototype.notify = function () {
+    this.subscribers.forEach( sub => {
+        sub.update();
+    });
+};
+```
+
+This class isn't very complicated. But there are two things to note: 
+1. we have replaced the global `componentBeingRendered` with `Dependency.componentBeingRendered` to align with Vue's source code
+2. we expect each subscriber to have an unique id and if a subscriber's id is found to already exist in `this.subscriberIds`, we will not add the subscriber anymore. This is useful as it prevents the same subscriber to be added twice. If a subscriber is added twice, it will also be updated twice, and the second update is unwanted.
+
+Next, we will modify our `SV.js` to make use of our brand new `Dependency`. We will first modify our `observe` method, and replace our array `subscribers` with an instance of `Dependency`.
+
+```js
+function observe(obj) {
+    const keys = Object.keys(obj);
+    let i = keys.length;
+    while(i--) {
+        const key = keys[i];
+        let value = obj[key];
+        if(isReserved(key)) return;
+
+        //instead of using an array to manage the subscribers, we use an instance of Dependency now.
+        const dep = new Dependency();
+
+        Object.defineProperty(obj, key, {
+            configurable: true,
+            enumerable: true,
+            get: function proxyGetter(){
+                if(Dependency.componentBeingRendered)
+                    dep.addSub(Dependency.componentBeingRendered);
+                return value;
+            },
+            set: function proxySetter(val){
+                value = val;
+                if(isObject(value)) observe(value);
+                dep.notify();
+            }
+        });
+
+        if(isObject(value))
+            observe(value);
+    }
+}
+```
+
+Also, when we are rendering a component, we now need to update `Dependency.componentBeingRendered` rather than `componentBeingRendered`:
+
+```js
+SV.prototype.evaluate = function(){
+    Dependency.componentBeingRendered = this;
+    const ret = this.options.render.call(this);
+    Dependency.componentBeingRendered = null;
+    return ret;
+};
+```
+
+Our job with `Dependency` is done here. Next, let's take a look at the `Observer` class.
+
+## Observer
+
+Our `Observer` will mainly contain the logic related to observing changes and tracking dependencies. It creates getters and setters for each data property or component properties. We will refactored the related logic out from `SV.js` and move them to `Observer`.
+
+This is the definition of `Observer`
+
+```js
+export function Observer (value) {
+    this.value = value;
+    this.walk(value);
+}
+
+Observer.prototype.walk = function (obj) {
+    const keys = Object.keys(obj);
+    for (let i = 0, l = keys.length; i < l; i++) {
+        this.convert(keys[i], obj[keys[i]])
+    }
+};
+
+Observer.prototype.convert = function (key, val) {
+    defineReactive(this.value, key, val)
+};
+
+export function defineReactive (obj, key, value) {
+    if(isReserved(key)) return;
+
+    const dep = new Dependency();
+
+    Object.defineProperty(obj, key, {
+        configurable: true,
+        enumerable: true,
+        get: function proxyGetter(){
+            if(Dependency.componentBeingRendered) {
+                dep.addSub(Dependency.componentBeingRendered);
+            }
+
+            return value;
+        },
+        set: function proxySetter(val){
+            value = val;
+            if(isObject(value))
+                observe(value);
+            dep.notify();
+        }
+    });
+
+    if(isObject(value))
+        observe(value);
+}
+
+export function observe (value) {
+    if (!isObject(value)) return;
+    return new Observer(value)
+}
+```
+
+As you can see in the above code definition, we basically copied all the code from `observe` function in `Vue.js`, to our `Observer` class. And `new Observer(obj)` is basically equivalent to `vm.observe(obj)`. This makes the code clearer as most the of logic related to reactivity is now put in `Observer`. At the end of `Observer.js`, we expose a `observe` function. This function simply creates an instance of `Observer` class and delegate all the hard work to it. 
+
+## Watcher
+
+So far, we have put subscriber management logic into `Dependency`, reactivity logic into `Observer`. The last remaining piece is `Watcher`. We will place the component update logic in our `Watcher`. At this stage, our `Watcher` is very simple.
+
+```js
+export default function Watcher(vm, evaluateFunc, callback, options) {
+    this.vm = vm;
+    this.getter = evaluateFunc;
+    this.callback = callback;
+    this.value = this.get();
+}
+
+Watcher.prototype.run = function(){
+    this.value = this.get();
+    this.callback.call(this.vm, this.value);
+};
+
+Watcher.prototype.update = function(){
+    this.run();
+};
+
+Watcher.prototype.get = function () {
+    this.beforeGet();
+    const value = this.getter.call(this.vm);
+    this.afterGet();
+    return value;
+};
+
+let previousComponentBeingRendered;
+
+Watcher.prototype.beforeGet = function () {
+    previousComponentBeingRendered = Dependency.componentBeingRendered;
+    Dependency.componentBeingRendered = this;
+};
+
+Watcher.prototype.afterGet = function () {
+    Dependency.componentBeingRendered = previousComponentBeingRendered;
+};
+```
+
+To explain how `Watcher` works, it is probably easier to start with how we uses it. To use it, we will first add a new method in `Vue.js`:
+
+```js
+SV.prototype.callback = function(newVal){
+    this.patch(newVal);
     this.value = newVal;
 };
-
-SV.prototype.mount = function(){
-    const newVal = this.evaluate();
-    this.update(newVal);
-};
 ```
 
-So far, we are able to render our single component application, and it is used in a similar way like Vue. For instance, this is how we can achieve the same result by Vue:
-
-### html
-
-```html
-<div id="app"></div>
-```
-
-### js
+and we will create a new instance of `Watcher` like the following:
 
 ```js
-var vm = new Vue({
-    el: '#app',
-    data: {
-        message: 'Hello World!'
-    },
-    render: function (createElement) {
-        return createElement(
-            "p",
-            [this.message]
-        )
-    }
-});
+vm.watcher = new Watcher(vm, this.evaluate, this.callback, null /*null is options, for now we just leave it to null*/);
 ```
 
-## Child Component
-
-We've had our single component application, now we are going to look at child component, or nested component. For now, we aim to have simple child components. We want to be able to use child components like this:
+To update the a componet, we can do either of the following. If you take a minute to examine the call sequence, you will notice that these two ways are identical: firstly `vm.evaluate` is called, and `vm.patch` is called subsequently.
 
 ```js
-SV.component("name", {
-    data: function(){
-        return {
-            firstName: "Darth",
-            lastName: "Vader"
-        }
-    },
-    render: function(){
-        const p = document.createElement("p");
-        p.innerText = `${this.firstName} ${this.lastName}`;
-        return p;
-    }
-});
+// update the component via its `update` method
+vm.update();
 
-var vm = new SV({
-    el: '#app',
-    data: {
-        message: 'Greetings!'
-    },
-    render: function(){
-        const p = document.createElement("p");
-        p.innerText = this.message;
-
-        const name = useComponent("name");
-
-        const div = document.createElement("div");
-        div.appendChild(p);
-        div.appendChild(name);
-        return div;
-    }
-});
+// update the component via its `Watcher` instance
+vm.watcher.update();
 ```
 
-As you can see, it is quite similar to how we use components in Vue.js
+Either approach is fine, and they do exactly the same thing. So why all the effort in making all the extra code? For now, the most immediate benefit is that our code structure will align with the original Vue.js source code. It will make it easier for you should you choose to read Vue.js source code later on. There are two other benefits:
 
-Our implementation consists mainly two parts:
-1. We need to be able to register a component by name. This is equivalent to component global registration in Vue.js
-2. We need to be able to find the component by its name, and use it to render HTML.
+1. We will later optimize the update process and we will add more complicated logic. Instead of putting all them into a single `Vue.js` file, our `Watcher` is the perfect place to add them.
 
-The registration part is relatively straight forward as shown in the below code snippet. When registering a component, we take two parameters: 
-1. the component name
-2. the component definition
+2. In later chapters, we will see that component is not the only thing we need to update. For instance, we also have computed properties and they too need to be updated, in a very similar way. Delegating the common part of update workflow to our `Watcher` class makes it easy to achieve code reuse.
 
-We can use a map for storage here. The key name is the component name, and the value is the definition. When we need to create an instance of this component, we can look for the definition through name, and then create a new component instance based on the definition.
+If the last two points do not make much sense at the moment, it is fine. We will be revisiting `Watcher` class many times in later chapters as we continue our implementation of SV. By then, it will be easier to justify `Watcher` class.
 
-```js
-SV.options = {
-    components: Object.create(null)
-};
+From now on, we will stick to using `Watcher` class for component update. We can then remove `vm.update` method as it is no longer needed. 
 
-SV.component = function(name, definition) {
-SV.options.components[name] = definition;
-};
-```
+At the same time, we will rename the `vm.callback` method to `vm._update` method, to align with Vue.js source code. This may seem a bit confusing, but in summary:
 
-To use a component, we will create an instance of this component, and evaluates its DOM element. The evaluated DOM element will be returned and used in the parent's rendering process.
+1. `vm.update` => removed
+2. `vm.callback` => `vm._udpate`
 
-```js
-SV.useComponent = function(name){
-    const options = SV.options.components[name];
-    options.data = options.data();
-    const component = new SV(options);
-    return component.evaluate();
-};
-```
+Another thing to pay attention is, with `Watcher`, we no longer points `Dependency.componentBeingRendered` to a component. Instead, when a component is being rendered, we point it to the component's watcher. Therefore, the component's watcher is recorded as a subscriber, instead of the component itself. You can think of the watcher as the component's representative. When we call `subscriber.update()`, it is the watcher's `update` method that gets called, and it will update the component properly. 
 
-There are several things to notice here:
-1. we will reuse the SV constructor we defined for single component application. 
-2. the component definition is used as the component options.
-3. we call `options.data()` to obtain a stand alone copy for each component instance, as we do in Vue.
-We also need to modify our SV constructor slightly. Currently, it will call `mount` at the end, inserting the evaluated DOM element into DOM tree. In our case, we want to return the DOM element and let the parent component decides how to, when to and where to insert the DOM element. 
+## A milestone
 
-If `options.el` exists, then it means this component will replace the target element (specified by `options.el` selector) with its evaluated DOM element. Therefore, it makes sense to mount the component automatically. If `options.el` does not exists, then it is unknown where this component is to be inserted in the DOM tree. The place can be anywhere, so we not call `mount` in the component initialization phase.
+We have managed to organize our code into different smaller components. This lays a good foundation for the following development. There are a lot of code changes in this chapter, so be sure to check out the github code repository at least once. In the next chapter, we will try to implement computed property.
 
-```js
-function SV(options){
-    this.options = options;
-    const el = document.querySelector(options.el);
-    if(el) {
-        this.value = el;
-        this.mount();
-    }
-}
-```
 
-Let’s run the code and see what we have so far.
 
-```js
-<div>
-    <p>Greetings!</p>
-    <p>Darth Vader</p>
-</div>
-```
-
-So far, in this chapter. We are able to define our own SV components, and render some HTML. Our SV framework still lacks a lot of features offered by Vue. But this is a very good start. We will gradually enhance our SV framework to include all core features of Vue. In the next chapter, we will discuss data proxy and method binding.
