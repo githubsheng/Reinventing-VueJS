@@ -1,6 +1,10 @@
 import Dependency from "./Dependency.js";
 
+let watcherId = 0;
+
 export default function Watcher(vm, evaluateFunc, callback, options) {
+    //`watcherId` is checked by `Dependency` to avoid the same watcher being added as subscriber of the same dependency twice.
+    this.watcherId = watcherId++;
     this.vm = vm;
     this.getter = evaluateFunc;
     this.callback = callback;
