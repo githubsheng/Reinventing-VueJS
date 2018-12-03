@@ -28,11 +28,11 @@ SV.prototype.patch = function(newVal){
 };
 
 SV.prototype.mount = function(){
-    this.watcher = new Watcher(this, this.evaluate, this.update);
-    this.update(this.watcher.value);
+    this.watcher = new Watcher(this, this.evaluate, this._update);
+    this._update(this.watcher.value);
 };
 
-SV.prototype.update = function(newVal){
+SV.prototype._update = function(newVal){
     this.patch(newVal);
     this.value = newVal;
 };
