@@ -1,4 +1,4 @@
-# Chapter 6: (Draft) Observer, Dep and Watcher
+# Chapter 6: Refactoring: Observer, Dep and Watcher
 
 We’ve added a lot of code so far. So far all of our logic resides in `SV.js`. It is time to do some refactoring and move the code to the proper places: new files and maybe new packages. To make it easier to relate to the Vue.js source code, we will be creating similar classes and functions as Vue.js. The first 3 classes we will be creating are `Dependency`, `Observer` and `Watcher`. Let's look at them one by one.
 
