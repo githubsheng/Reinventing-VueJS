@@ -1,266 +1,212 @@
-# Chapter 6: Refactoring: Observer, Dep and Watcher
+# Chapter 7: Implementing watched property
 
-We’ve added a lot of code so far. So far all of our logic resides in `SV.js`. It is time to do some refactoring and move the code to the proper places: new files and maybe new packages. To make it easier to relate to the Vue.js source code, we will be creating similar classes and functions as Vue.js. The first 3 classes we will be creating are `Dependency`, `Observer` and `Watcher`. Let's look at them one by one.
+## A more general definition for Dependency and Subscriber
 
-We will have 3 new classes: `Observer`, `Watcher` and `Dependency`. For now, each of them will be responsible for following tasks:
+In the previous chapters, we defined the "dependency" and "subscriber" concept. Here is the recap:
 
-## Dependency
+If a component uses a `options.data` property for rendering, we say that this component “depends on” this data property. And this property is a “dependency” of the component, this component is a “depending component”, or “subscriber” of this property. When this dependency changes, our component needs to be re-rendered. We say this component needs “update”. 
 
-We have seen that a data property or component property can be the dependency of multiple depending components / subscribers. So far we have been using a simple array list to manage all the subscribers, as shown below:
+It turns out components are not the only possible subscribers (techinically, components' watchers). In Vue.js, we can have watched properties. When we watch a property, we need to call the supplied evaluation function should this property changes.
+
+For example, we want to call our log function if `options.data.message` changes.
 
 ```js
-function observe(obj, vm) {
-	//omitted for brevity
-
-	//this list records all subscribers
-	let subscribers = [];
-
-    Object.defineProperty(obj, key, {
-        configurable: true,
-        enumerable: true,
-        get: function proxyGetter(){
-
-            if(componentBeingRendered) {
-            	//add a subscriber
-                subscribers.push(componentBeingRendered);
-            }
-            return value;
-        },
-        set: function proxySetter(val){
-        	//omitted for brevity
-
-            subscribers.forEach(sub => {
-            	//ask a subscriber to update.
-                sub.update();
-            });
+window.vm = new SV({
+    el: '#app',
+    data: {
+        message: 'Great bargain!',
+        dimensions: {
+            width: '6 meters',
+            height: '2 meters'
         }
-    });
-
-    //omitted for brevity.
-}
-```
-
-We also have a global variable floating in the air `componentBeingRendered` that points to the current component being rendered.
-
-We will move the all the above logic into `Dependency` class:
-
-```js
-export default function Dependency () {
-    this.subscribers = [];
-    this.subscriberIds = new Set();
-}
-
-Dependency.componentBeingRendered = null;
-
-Dependency.prototype.addSub = function (sub) {
-    if(!this.subscriberIds.has(sub.watcherId)) {
-        this.subscribers.push(sub);
-        this.subscriberIds.add(sub.watcherId)
-    }
-};
-
-Dependency.prototype.notify = function () {
-    this.subscribers.forEach( sub => {
-        sub.update();
-    });
-};
-```
-
-This class isn't very complicated. But there are two things to note: 
-1. we have replaced the global `componentBeingRendered` with `Dependency.componentBeingRendered` to align with Vue's source code
-2. we expect each subscriber to have an unique id and if a subscriber's id is found to already exist in `this.subscriberIds`, we will not add the subscriber anymore. This is useful as it prevents the same subscriber to be added twice. If a subscriber is added twice, it will also be updated twice, and the second update is unwanted.
-
-Next, we will modify our `SV.js` to make use of our brand new `Dependency`. We will first modify our `observe` method, and replace our array `subscribers` with an instance of `Dependency`.
-
-```js
-function observe(obj) {
-    const keys = Object.keys(obj);
-    let i = keys.length;
-    while(i--) {
-        const key = keys[i];
-        let value = obj[key];
-        if(isReserved(key)) return;
-
-        //instead of using an array to manage the subscribers, we use an instance of Dependency now.
-        const dep = new Dependency();
-
-        Object.defineProperty(obj, key, {
-            configurable: true,
-            enumerable: true,
-            get: function proxyGetter(){
-                if(Dependency.componentBeingRendered)
-                    dep.addSub(Dependency.componentBeingRendered);
-                return value;
-            },
-            set: function proxySetter(val){
-                value = val;
-                if(isObject(value)) observe(value);
-                dep.notify();
-            }
-        });
-
-        if(isObject(value))
-            observe(value);
-    }
-}
-```
-
-Also, when we are rendering a component, we now need to update `Dependency.componentBeingRendered` rather than `componentBeingRendered`:
-
-```js
-SV.prototype.evaluate = function(){
-    Dependency.componentBeingRendered = this;
-    const ret = this.options.render.call(this);
-    Dependency.componentBeingRendered = null;
-    return ret;
-};
-```
-
-Our job with `Dependency` is done here. Next, let's take a look at the `Observer` class.
-
-## Observer
-
-Our `Observer` will mainly contain the logic related to observing changes and tracking dependencies. It creates getters and setters for each data property or component properties. We will refactored the related logic out from `SV.js` and move them to `Observer`.
-
-This is the definition of `Observer`
-
-```js
-export function Observer (value) {
-    this.value = value;
-    this.walk(value);
-}
-
-Observer.prototype.walk = function (obj) {
-    const keys = Object.keys(obj);
-    for (let i = 0, l = keys.length; i < l; i++) {
-        this.convert(keys[i], obj[keys[i]])
-    }
-};
-
-Observer.prototype.convert = function (key, val) {
-    defineReactive(this.value, key, val)
-};
-
-export function defineReactive (obj, key, value) {
-    if(isReserved(key)) return;
-
-    const dep = new Dependency();
-
-    Object.defineProperty(obj, key, {
-        configurable: true,
-        enumerable: true,
-        get: function proxyGetter(){
-            if(Dependency.componentBeingRendered) {
-                dep.addSub(Dependency.componentBeingRendered);
-            }
-
-            return value;
-        },
-        set: function proxySetter(val){
-            value = val;
-            if(isObject(value))
-                observe(value);
-            dep.notify();
+    },
+    watch: {
+        message: function(newVal) {
+            console.log("new message is " + newVal);
+            console.log("message changed at " + (new Date()).toTimeString());
         }
-    });
+    },
+    render: function(){
+        // omitted for brevity
+    }
+});
+```
 
-    if(isObject(value))
-        observe(value);
+In the above example, Conceptually, we can say the log function "depends on" `options.data.message` and it needs to be re-evaluated if its dependency changes, or in other words, this log function "subscribes" to the changes of `options.data.message`. 
+
+## Make use of Watchers
+
+Since our log function is also conceptually a subscriber, just like the components we dicussed before, our first attempt would be treating it like a component. 
+
+```js
+function SV(options){
+    this.options = options;
+    initProps(this);
+    initData(this);
+    initMethods(this);
+    // call initWatch after we have established the proxy and observers
+    initWatch(this);
+    const el = document.querySelector(options.el);
+    if(el) {
+        this.value = el;
+        this.mount();
+    }
 }
 
-export function observe (value) {
-    if (!isObject(value)) return;
-    return new Observer(value)
+function initWatch(vm) {
+    const watch = vm.options.watch;
+    if(!watch) return;
+
+    Object.keys(watch).forEach(propName => {
+
+        function evaluateFunc() {
+            return vm[propName];
+        }
+
+        const callback = watch[propName];
+
+        new Watcher(vm, evaluateFunc, callback);
+    });
 }
 ```
 
-As you can see in the above code definition, we basically copied all the code from `observe` function in `Vue.js`, to our `Observer` class. And `new Observer(obj)` is basically equivalent to `vm.observe(obj)`. This makes the code clearer as most the of logic related to reactivity is now put in `Observer`. At the end of `Observer.js`, we expose a `observe` function. This function simply creates an instance of `Observer` class and delegate all the hard work to it. 
+Surprisingly, this is all it takes to make watched property works. Let's test it.
 
-## Watcher
+```js
+vm.message = "Hello World";
+// => new message is Hello World
+// => message changed at 10:00:32 GMT+0900 (Japan Standard Time)
 
-So far, we have put subscriber management logic into `Dependency`, reactivity logic into `Observer`. The last remaining piece is `Watcher`. We will place the component update logic in our `Watcher`. At this stage, our `Watcher` is very simple.
+vm.message = "Good Night World";
+// => new message is Good Night World
+// => message changed at 10:00:50 GMT+0900 (Japan Standard Time)
+```
+
+Let's take a closer look at the `initWatch`. It first gets the `vm.option.watch` object. In our case, this watch object has one property `message`. It means we are watching `vm.message`. Since we have already established the data proxy in previous steps, `vm.message === vm.options.data.message`. We then create a watcher for the `message` property. Two functions are passed into the watcher. `evaluateFunc` access the a serious of getters and returns the value of `message`. `callback` is our log function here. When we initialize the watcher, the watcher calls `evaluateFunc` once. This is important, because it allows the watcher to access the getter created by `Observer`. When the getter is invoked, it records our watcher as a subscriber.
+
+Whenever `vm.message` changes, it updates all of its subscribers. Our watcher created here also gets udpated. During the update, `callback` (our log function) gets called, and it log the new value and time and in the console.
+
+## Accessing the old value in callback
+
+With the help of `Watcher`, we are able to easily implement watched property. The extra code we did to create `Watcher` seems to pay off. But there is one small thing though, we are only able to print the new value, that is, only the new value is being passed to our log function. In Vue.js, you get both old value, and new value.
+
+```js
+//In Vue.js, log function can be
+function(newVal, oldVal) {
+    //omitted for brevity
+}
+
+//In SV, we only get the new value.
+function(newVal){
+    //omitted for brevity
+}
+```
+
+We need to figure out a way to get the old value as well. The direct solution would be storing the old value in the watcher, and pass it to the callback function together with the new value.
 
 ```js
 export default function Watcher(vm, evaluateFunc, callback, options) {
-    this.vm = vm;
-    this.getter = evaluateFunc;
-    this.callback = callback;
+    //omitted for brevity
     this.value = this.get();
+    this.oldValue = this.value;
 }
 
 Watcher.prototype.run = function(){
     this.value = this.get();
-    this.callback.call(this.vm, this.value);
-};
-
-Watcher.prototype.update = function(){
-    this.run();
-};
-
-Watcher.prototype.get = function () {
-    this.beforeGet();
-    const value = this.getter.call(this.vm);
-    this.afterGet();
-    return value;
-};
-
-let previousComponentBeingRendered;
-
-Watcher.prototype.beforeGet = function () {
-    previousComponentBeingRendered = Dependency.componentBeingRendered;
-    Dependency.componentBeingRendered = this;
-};
-
-Watcher.prototype.afterGet = function () {
-    Dependency.componentBeingRendered = previousComponentBeingRendered;
+    //pass in the old value
+    this.callback.call(this.vm, this.value, this.oldValue);
+    //update the old value.
+    this.oldValue = this.value;
 };
 ```
 
-To explain how `Watcher` works, it is probably easier to start with how we uses it. To use it, we will first add a new method in `Vue.js`:
+## Enhance Watcher class
+
+Currently Watcher class expects a `evaluateFunc` and calls it to get the latest value. `evaluateFunc` needs to be a function for this to work. In our `initWatch` function, we create an anonymous function just to read a property of `vm`:
 
 ```js
-SV.prototype.callback = function(newVal){
-    this.patch(newVal);
-    this.value = newVal;
-};
+function evaluateFunc() {
+    return vm[propName];
+}
 ```
 
-and we will create a new instance of `Watcher` like the following:
+We can enhance the `Watcher` class so that if `evaluateFunc` is a string, we treat it as the name of a `vm` property and automatically generate a method like the one above. Because `evaluateFunc` is not limitted to a function anymore, we will also rename it to `expOrFunc`.
 
 ```js
-vm.watcher = new Watcher(vm, this.evaluate, this.callback, null /*null is options, for now we just leave it to null*/);
+export default function Watcher(vm, expOrFunc, callback, options) {
+    // omitted for brevity 
+
+    if (typeof expOrFunc === 'function') {
+        //expOrFunc is a evaluation function, we will just call it later.
+        this.getter = expOrFunc
+    } else {
+        //expOrFunc is an expression, we will treat it as a property of vm.
+        this.getter = function(){
+            return vm[expOrFunc];
+        }
+    }
+
+    this.callback = callback;
+    this.value = this.get();
+    this.oldValue = this.value;
+}
 ```
 
-To update the a componet, we can do either of the following. If you take a minute to examine the call sequence, you will notice that these two ways are identical: firstly `vm.evaluate` is called, and `vm.patch` is called subsequently.
+Now, in `initWatch`, we do not need to create `evaluateFunc` anymore, simply passing the name of the watched property will be enough
+
+## Handling nested property
+
+At this point we are able to watch a property of `vm` like `vm.message`. But we cannot watch a nested property such as `vm.dimensions.height`. With the current code base we will be creating a evaluation function like this:
 
 ```js
-// update the component via its `update` method
-vm.update();
+this.getter = function(){
+    return vm[expOrFunc];
+}
 
-// update the component via its `Watcher` instance
-vm.watcher.update();
+// if expOrFunc is `dimensions.height` then it will be equivalent to
+this.getter = function(){
+    return vm['dimensions.height']; // => will return undefined
+}
 ```
 
-Either approach is fine, and they do exactly the same thing. So why all the effort in making all the extra code? For now, the most immediate benefit is that our code structure will align with the original Vue.js source code. It will make it easier for you should you choose to read Vue.js source code later on. There are two other benefits:
+To fix this we need to have `vm['dimensions']['height']` instead. There is an existing utility function in Vue.js source code that help us to figure out the property path
 
-1. We will later optimize the update process and we will add more complicated logic. Instead of putting all them into a single `Vue.js` file, our `Watcher` is the perfect place to add them.
+```js
+const bailRE = /[^\w\.]/
+export function parsePath (path) {
+  if (bailRE.test(path)) {
+    return
+  } else {
+    path = path.split('.')
+    return function (obj) {
+      for (let i = 0; i < path.length; i++) {
+        if (!obj) return
+        obj = obj[path[i]]
+      }
+      return obj
+    }
+  }
+}
 
-2. In later chapters, we will see that component is not the only thing we need to update. For instance, we also have computed properties and they too need to be updated, in a very similar way. Delegating the common part of update workflow to our `Watcher` class makes it easy to achieve code reuse.
+const fnc = parsePath('a.b.c.d');
+func(obj); // => same as obj['a']['b']['c']['d'];
+```
 
-If the last two points do not make much sense at the moment, it is fine. We will be revisiting `Watcher` class many times in later chapters as we continue our implementation of SV. By then, it will be easier to justify `Watcher` class.
+We will just copy this utility method and use it directly
 
-From now on, we will stick to using `Watcher` class for component update. We can then remove `vm.update` method as it is no longer needed. 
+```js
+this.getter = parsePath(expOrFunc);
+```
 
-At the same time, we will rename the `vm.callback` method to `vm._update` method, to align with Vue.js source code. This may seem a bit confusing, but in summary:
+## The imperative vm.$watch API
+Vue also allows users to use the imperative API https://vuejs.org/v2/api/#vm-watch. The Vue version allows user to pass an option object to tweak the behavior of the Watcher. We will quickly implement a simple version here, without the option parameter. This api merely creates a watcher under the hood.
 
-1. `vm.update` => removed
-2. `vm.callback` => `vm._udpate`
+```js
+vm.$watch = function(eval, update) {
+    new Watcher(eval, update);
+} 
+```
 
-Another thing to pay attention is, with `Watcher`, we no longer points `Dependency.componentBeingRendered` to a component. Instead, when a component is being rendered, we point it to the component's watcher. Therefore, the component's watcher is recorded as a subscriber, instead of the component itself. You can think of the watcher as the component's representative. When we call `subscriber.update()`, it is the watcher's `update` method that gets called, and it will update the component properly. 
+## Summary
 
-## A milestone
-
-We have managed to organize our code into different smaller components. This lays a good foundation for the following development. There are a lot of code changes in this chapter, so be sure to check out the github code repository at least once. In the next chapter, we will try to implement watched property.
-
-
-
+OK. We've successfully implemented Watched Property. Most importantly, we have seen that how we can use Watcher to help us update virtually anything, not just components. In next chapter, we will try to implement Computed Property.
