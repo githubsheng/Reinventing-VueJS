@@ -53,8 +53,9 @@ export default function Dependency () {
 Dependency.componentBeingRendered = null;
 
 Dependency.prototype.addSub = function (sub) {
-    if(!this.subscriberIds.has(sub.id)) {
+    if(!this.subscriberIds.has(sub.watcherId)) {
         this.subscribers.push(sub);
+        this.subscriberIds.add(sub.watcherId)
     }
 };
 
