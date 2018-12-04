@@ -130,13 +130,9 @@ function initWatch(vm) {
 
     Object.keys(watch).forEach(propName => {
 
-        function evaluateFunc() {
-            return vm[propName];
-        }
-
         const callback = watch[propName];
 
-        new Watcher(vm, evaluateFunc, callback);
+        new Watcher(vm, propName, callback);
     });
 }
 
@@ -159,9 +155,9 @@ window.vm = new SV({
         }
     },
     watch: {
-        message: function(newVal) {
-            console.log("new message is " + newVal);
-            console.log("message changed at " + (new Date()).toTimeString());
+        'dimensions.height': function(newVal) {
+            console.log("new height is " + newVal);
+            console.log("height changed at " + (new Date()).toTimeString());
         }
     },
     render: function(){

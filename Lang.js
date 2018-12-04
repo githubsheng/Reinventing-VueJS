@@ -6,3 +6,17 @@ export function isReserved (str) {
 export function isObject (obj) {
     return obj !== null && typeof obj === 'object'
 }
+
+const bailRE = /[^\w\.]/
+export function parsePath (path) {
+    if (!bailRE.test(path)) {
+        path = path.split('.');
+        return function (obj) {
+            for (let i = 0; i < path.length; i++) {
+                if (!obj) return;
+                obj = obj[path[i]]
+            }
+            return obj;
+        }
+    }
+}
