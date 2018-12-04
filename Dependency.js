@@ -8,6 +8,7 @@ Dependency.componentBeingRendered = null;
 Dependency.prototype.addSub = function (sub) {
     if(!this.subscriberIds.has(sub.watcherId)) {
         this.subscribers.push(sub);
+        this.subscriberIds.add(sub.watcherId);
     }
 };
 
