@@ -7,6 +7,7 @@ function SV(options){
     initProps(this);
     initData(this);
     initMethods(this);
+    initWatch(this);
     const el = document.querySelector(options.el);
     if(el) {
         this.value = el;
@@ -123,6 +124,22 @@ function initMethods(vm) {
     }
 }
 
+function initWatch(vm) {
+    const watch = vm.options.watch;
+    if(!watch) return;
+
+    Object.keys(watch).forEach(propName => {
+
+        function evaluateFunc() {
+            return vm[propName];
+        }
+
+        const callback = watch[propName];
+
+        new Watcher(vm, evaluateFunc, callback);
+    });
+}
+
 SV.component("dimension", {
     props: ['dimensions'],
     render: function(){
@@ -139,6 +156,12 @@ window.vm = new SV({
         dimensions: {
             width: '6 meters',
             height: '2 meters'
+        }
+    },
+    watch: {
+        message: function(newVal) {
+            console.log("new message is " + newVal);
+            console.log("message changed at " + (new Date()).toTimeString());
         }
     },
     render: function(){
