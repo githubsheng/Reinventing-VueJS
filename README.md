@@ -50,10 +50,12 @@ Vue.component('prices', {
 });
 ```
 
+### How vue track which component needs update
 If you haven't read chapter-4, I would recommend you to read it first. Simply put, for each vue component, vue enhance its data with getters and setters. In this case, we have a pair of getter and setter for `data.prices`. A pair of getter and setter for `data.prices.perNight`. And finally, we have a pair of getter and setter for `data.prices.stays`. When we use a part of the data to render a component, the getter track that component, and update the component when the part of data changes.
 
 In the above example, data `prices` is passed down to prices component, and the component access the getters of `perNight` and `stays` to render itself. Now vue knows `perNight` and `stays` are used in rendering prices component, and will try to update the component, when their values change (via setter).
 
+### creating a set of new vdoms
 Let's see what actually happened when we click the one more night button.
 
 Firstly, after the hotel is rendered for the first time, conceptually, we have a dom tree like the following.
@@ -85,22 +87,30 @@ hotel-component-meta-data
 ```
 When we click the button, `prices.stays` gets updated, and since it is only used in prices component, only the prices component gets updated. Prices component updates itself by first creating new vdoms under it again.
 
-
-new vdoms
 ```
-div-vdom
-    |
-    |__p-vdom
-    |    |
-    |    |___text-vdom (perNight: 9000)
-    |
-    |__p-vdom
-        |
-        |___text-vdom (stays: 3)
+prices-component-meta-data
+            |
+            |__prices-component
+                |            |
+                |___div-vdom |______div-vdom
+                   (old vdom)       (new vdom)
+                (children omitted)      |
+                                        |
+                                        |__p-vdom
+                                        |    |
+                                        |    |____text-vdom (perNight: 9000)
+                                        |
+                                        |__p-vdom
+                                            |
+                                            |____text-vdom (stays: 2)
 ```
 
+### How does patch function compare and synchronize vdoms
 Then vue will patch the old `div-vdom` with the new `div-vdom`. The patch function firstly check if the two vdoms are of the same type. In this case, they are both `div` types. So the patch will update the old vdom, and its real dom, with the new properties and attributes (like ids, class, styles) of the new vdom. Then patch function continues to work on their children. To make it simple, the patch function patches (call itself) the first child of the old vdom with the first child of the new vdom, and then patches the old vdom's second child with the new vdom's second child, and continues. If the new vdom has more childen, patch function creates real dom elements for these children. If the old vdom has more children, these children will gets destroyed, along with their real doms. In practice though, rather than comparing the first with the first, and second with the second... vue does some optimizations for some common seen senarios, I would recommend to take a look at the `updateChildren` function in `patch.js`.
 
+At the end of the `patch` function. The old vdoms will be syncrhonized from the new vdoms. The new vdoms then becomes useless and removed.
+
+### Key difference from React
 This is the first vue update routine. As you can see it is more elegant and potentially more effcient than React. Unless we write the `shouldComponentUpdate` method, react always need to construct the whole vdom of hotel component, and potentially compare all the vdoms to find out which vdom needs update. However, vue knows from the beginning that it only needs to compare the vdoms of the prices component. The differences may not be huge here. But imagine if the hotel component holds a very complex data and different parts of it are passed to hundreds of other components, then the difference can be huge.
 
 ## Second update routine
@@ -151,12 +161,14 @@ hotel-component-meta-data
                             |_____text-vdom
 ```
 
+### component meta data
 There is one thing worth mentioning first here. You may have noticed, there is "meta-data". A component meta contains the characterstics of a component. It typically stores these following information:
 1. the component type
 2. its properties
 3. its data.
 Compared with a fully fledged component instance, the meta data is much more lightway and much faster to create.
 
+### partial vdom tree and shallow comparision
 So knowing what meta data is, let's see what happens when hotel component updates itself. Hotel component will first tries to create a set of new vdoms. However, it does not creates all of the vdoms under it. Instead, it creates something like the following:
 
 ```
@@ -224,7 +236,7 @@ hotel-component-meta-data
 
 ```
 
-After `patch` move over the prices component. It continues to compare other vdoms. Same as in the first routine, everytime `patch` compares two vdoms, it updates the old vdom with the properties from the new vdom (one exception is that if the old and new vdoms are of different types, then the new one replaces the old one). When `patch` finishes, the old vdoms will be synced from the new vdoms. The new vdoms then becomes useless, and is removed.
+After `patch` move over the prices component. It continues to compare other vdoms. This is the same as described in the first routine. When `patch` finishes, the old vdoms will be synced from the new vdoms. The new vdoms then becomes useless, and is removed.
 
 ### after the patch function finishes
 ```
@@ -264,7 +276,7 @@ For all component properties, vue simply checks if they are the same using shall
 
 After the prices component is put into the update queue, at next tick, vue will try to update prices component. The prices component first creates a set of new vdoms, and the `patch` function compares the old and new vdoms, and decides how to update the actual dom.
 
-### at next tick, prices component creates a new set of vdoms, and run `patch` to compare the old and new vdoms, eventually synchronizing the old from the new.
+At next tick, prices component creates a new set of vdoms, and run `patch` to compare the old and new vdoms, eventually synchronizing the old from the new. This is the same as described in routine 1.
 
 ```
 hotel-component-meta-data
