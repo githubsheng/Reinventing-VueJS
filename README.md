@@ -205,7 +205,7 @@ For each of the above, it does a fast, shallow comparision. This shallow compari
 3. put the price component into the update queue, and then move on to compare the button vdoms.
 
 
-### after the above three steps, this is how the vdom tree look like:
+after the above three steps, this is how the vdom tree look like:
 ```
 hotel-component-meta-data
     |
@@ -268,15 +268,13 @@ hotel-component-meta-data
 
 There are two important things to remember and understand here:
 
-### the patch function does not creates new vdoms
-The `patch` function finds out that the price component needs update. It then updates the component instance's properties, but it does not attempt to create new vdoms and go on to compare the new vdoms and the old. At the next tick, vue will get the price component from the update queue, calls the render method of the price component. This creates a new set of vdoms, using the updated properties. Vue then calls the `patch` function to compare the new and old vdoms. This is important to understand, otherwise you will be confused when reading the source code.
+### the patch function does not update the vdoms of components
+The `patch` function finds out that the price component needs update. It then updates the component instance's properties, but it does not attempt to create new vdoms and go on to synchronize the new vdoms and the old. After the `patch` function finishes, at the next tick, vue will get the price component from the update queue, calls the render method of the price component. This creates a new set of vdoms, using the updated properties. Vue then calls the `patch` function to compare the new and old vdoms. This is important to understand, otherwise you will be confused when reading the source code.
 
-### the patch function only does shallow comparision
+### why is shallow comparision good enough
 For all component properties, vue simply checks if they are the same using shallow comparision. In our case, the component properties `prices` are two different objects, and vue is able to detect the difference. You may ask, what happens if a nested property changes. For example, if `prices` remains the same object, but `prices.stays` is changed. In this case, the shallow comparision does not work, and it seems vue is not able to tell that the component needs an update. But as we discussed earlier, `prices.stays` changes triggers the first update rountine, and vue is able to update as expected.
 
-After the prices component is put into the update queue, at next tick, vue will try to update prices component. The prices component first creates a set of new vdoms, and the `patch` function compares the old and new vdoms, and decides how to update the actual dom.
-
-At next tick, prices component creates a new set of vdoms, and run `patch` to compare the old and new vdoms, eventually synchronizing the old from the new. This is the same as described in routine 1.
+After the prices component is put into the update queue, at next tick, vue will try to update prices component. The prices component creates a new set of vdoms, and runs `patch` to compare the old and new vdoms, eventually synchronizing the old from the new. This is the same as described in routine 1.
 
 ```
 hotel-component-meta-data
